@@ -1,4 +1,4 @@
-# based on https://github.com/zymk9/yolov5_animerun
+# based on https://github.com/zymk9/yolov5_anime
 
 # make sure you download yolov5x_anime.pt and place it on the project directory
 

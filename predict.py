@@ -44,8 +44,11 @@ class Predictor(BasePredictor):
 
             outputFile = outputPath.split(".")[0] + ".txt"
 
-            with open(f"inference/output/{outputFile}", "r") as f:
-                txt = f.read()
+            try:
+                with open(f"inference/output/{outputFile}", "r") as f:
+                    txt = f.read()
+            except FileNotFoundError:
+                txt = None
 
             return Output(file=outputImage, txt=txt)
        

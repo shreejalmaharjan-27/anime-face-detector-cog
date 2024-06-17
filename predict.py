@@ -35,7 +35,7 @@ class Predictor(BasePredictor):
             parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
             parser.add_argument('--augment', action='store_true', help='augmented inference')
             parser.add_argument('--update', action='store_true', help='update all models')
-            opt = parser.parse_args()
+            opt = parser.parse_args([])
             detect(opt=opt)
 
             outputPath = str(image).replace("/tmp","", 1).replace("/", "")

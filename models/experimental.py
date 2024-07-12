@@ -3,6 +3,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
+import gc
 
 from models.common import Conv, DWConv
 from utils.google_utils import attempt_download
@@ -143,3 +144,13 @@ def attempt_load(weights, map_location=None):
         for k in ['names', 'stride']:
             setattr(model, k, getattr(model[-1], k))
         return model  # return ensemble
+
+def unload_models(models):
+    if not isinstance(models, list):
+        models = [models]
+
+    for model in models:
+        del model  # Delete the model object
+
+    torch.cuda.empty_cache()  # Clear the GPU memory cache
+    gc.collect()  # Run garbage collection

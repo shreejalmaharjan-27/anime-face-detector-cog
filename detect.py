@@ -10,7 +10,7 @@ import torch
 import torch.backends.cudnn as cudnn
 from numpy import random
 
-from models.experimental import attempt_load
+from models.experimental import attempt_load, unload_models
 from utils.datasets import LoadStreams, LoadImages
 from utils.general import (
     check_img_size, non_max_suppression, apply_classifier, scale_coords, xyxy2xywh, plot_one_box, strip_optimizer)
@@ -142,6 +142,7 @@ def detect(save_img=False, opt = None):
             os.system('open ' + save_path)
 
     print('Done. (%.3fs)' % (time.time() - t0))
+    unload_models(model)
 
 
 if __name__ == '__main__':

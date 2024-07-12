@@ -3,9 +3,7 @@
 
 from cog import BasePredictor, Input, Path, BaseModel
 import argparse
-from detect import detect
-from models.experimental import attempt_load, unload_models
-from utils.torch_utils import select_device, load_classifier, time_synchronized
+import subprocess
 
 class Output(BaseModel):
     file: Path
@@ -15,8 +13,6 @@ class Predictor(BasePredictor):
     def setup(self) -> None:
         """Load the model into memory to make running multiple predictions efficient"""
         # self.model = torch.load("./weights.pth")
-        device = select_device('')
-        self.model = attempt_load("yolov5x_anime.pt", map_location=device) 
 
     def predict(
         self,
@@ -26,7 +22,7 @@ class Predictor(BasePredictor):
         iou: float = Input(default=0.5, description="IOU threshold"),
     ) -> Output:
             parser = argparse.ArgumentParser()
-            parser.add_argument('--weights', nargs='+', type=str, default='yolov5x_anime.pt', help='model.pt path(s)')
+            parser.add_argument('--weights', nargs='+', type=str, default='checkpoints/yolov5x_anime.pt', help='model.pt path(s)')
             parser.add_argument('--source', type=str, default=str(image), help='source')  # file/folder, 0 for webcam
             parser.add_argument('--output', type=str, default='inference/output', help='output folder')  # output folder
             parser.add_argument('--img-size', type=int, default=size, help='inference size (pixels)')
@@ -40,7 +36,26 @@ class Predictor(BasePredictor):
             parser.add_argument('--augment', action='store_true', help='augmented inference')
             parser.add_argument('--update', action='store_true', help='update all models')
             opt = parser.parse_args([])
-            detect(model=self.model,opt=opt)
+            # detect(opt=opt)
+            inference_process = subprocess.Popen([
+                 "python", 
+                 "detect.py", 
+                 "--weights", 
+                 "checkpoints/yolov5x_anime.pt", 
+                 "--source", str(image), 
+                 "--output", "inference/output", 
+                 "--img-size", str(size), 
+                 "--conf-thres", str(confidence), 
+                 "--iou-thres", str(iou), 
+                 "--save-txt"
+            ], stdout=subprocess.PIPE, universal_newlines=True)
+
+            for line in iter(inference_process.stdout.readline, ''):
+                print(line, end='')  # Print the output line by line
+                if "Results saved" in line:
+                    inference_process.kill()  # Kill the process if "Results saved" is found
+                    break
+
 
             outputPath = str(image).replace("/tmp","", 1).replace("/", "")
 
@@ -54,5 +69,5 @@ class Predictor(BasePredictor):
             except FileNotFoundError:
                 txt = ""
 
-            return Output(file=outputImage, txt=txt)
+            return Output(file=outputImage,txt=txt)
        

@@ -4,6 +4,8 @@
 from cog import BasePredictor, Input, Path, BaseModel
 import argparse
 from detect import detect
+from models.experimental import attempt_load, unload_models
+from utils.torch_utils import select_device, load_classifier, time_synchronized
 
 class Output(BaseModel):
     file: Path
@@ -13,6 +15,8 @@ class Predictor(BasePredictor):
     def setup(self) -> None:
         """Load the model into memory to make running multiple predictions efficient"""
         # self.model = torch.load("./weights.pth")
+        device = select_device('')
+        self.model = attempt_load("yolov5x_anime.pt", map_location=device) 
 
     def predict(
         self,
@@ -36,7 +40,7 @@ class Predictor(BasePredictor):
             parser.add_argument('--augment', action='store_true', help='augmented inference')
             parser.add_argument('--update', action='store_true', help='update all models')
             opt = parser.parse_args([])
-            detect(opt=opt)
+            detect(model=self.model,opt=opt)
 
             outputPath = str(image).replace("/tmp","", 1).replace("/", "")
 

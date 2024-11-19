@@ -1,3 +1,5 @@
 __pycache__/
 .cog/
 checkpoints/
+inference/output/
+test.jpeg

@@ -1,9 +1,15 @@
-# Prediction interface for Cog ⚙️
-# https://cog.run/python
-
 from cog import BasePredictor, Input, Path, BaseModel
-import argparse
-import subprocess
+import torch
+import cv2
+import shutil
+import os
+from pathlib import Path as PathLib
+from models.experimental import attempt_load
+from utils.general import check_img_size, non_max_suppression, scale_coords, plot_one_box
+from utils.datasets import LoadImages
+from utils.torch_utils import select_device
+import random
+from utils.google_utils import gdrive_download
 
 class Output(BaseModel):
     file: Path
@@ -11,8 +17,17 @@ class Output(BaseModel):
 
 class Predictor(BasePredictor):
     def setup(self) -> None:
-        """Load the model into memory to make running multiple predictions efficient"""
-        # self.model = torch.load("./weights.pth")
+        self.device = select_device('')
+        
+        # download the model checkpoint if it does not exist
+        if not os.path.exists("checkpoints/yolov5x_anime.pt"):
+             gdrive_download('1-MO9RYPZxnBfpNiGY6GdsqCeQWYNxBdl','checkpoints/yolov5x_anime.pt')
+
+        self.model = attempt_load("checkpoints/yolov5x_anime.pt", map_location=self.device)
+        if self.device.type != 'cpu':
+            self.model.half()
+        self.names = self.model.module.names if hasattr(self.model, 'module') else self.model.names
+        self.colors = [[random.randint(0, 255) for _ in range(3)] for _ in range(len(self.names))]
 
     def predict(
         self,
@@ -21,53 +36,56 @@ class Predictor(BasePredictor):
         confidence: float = Input(default=0.4, description="Confidence threshold"),
         iou: float = Input(default=0.5, description="IOU threshold"),
     ) -> Output:
-            parser = argparse.ArgumentParser()
-            parser.add_argument('--weights', nargs='+', type=str, default='checkpoints/yolov5x_anime.pt', help='model.pt path(s)')
-            parser.add_argument('--source', type=str, default=str(image), help='source')  # file/folder, 0 for webcam
-            parser.add_argument('--output', type=str, default='inference/output', help='output folder')  # output folder
-            parser.add_argument('--img-size', type=int, default=size, help='inference size (pixels)')
-            parser.add_argument('--conf-thres', type=float, default=confidence, help='object confidence threshold')
-            parser.add_argument('--iou-thres', type=float, default=iou, help='IOU threshold for NMS')
-            parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
-            parser.add_argument('--view-img', action='store_true', help='display results')
-            parser.add_argument('--save-txt', default=True, action='store_true', help='save results to *.txt')
-            parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --class 0, or --class 0 2 3')
-            parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
-            parser.add_argument('--augment', action='store_true', help='augmented inference')
-            parser.add_argument('--update', action='store_true', help='update all models')
-            opt = parser.parse_args([])
-            # detect(opt=opt)
-            inference_process = subprocess.Popen([
-                 "python", 
-                 "detect.py", 
-                 "--weights", 
-                 "checkpoints/yolov5x_anime.pt", 
-                 "--source", str(image), 
-                 "--output", "inference/output", 
-                 "--img-size", str(size), 
-                 "--conf-thres", str(confidence), 
-                 "--iou-thres", str(iou), 
-                 "--save-txt"
-            ], stdout=subprocess.PIPE, universal_newlines=True)
+        try:
+            out_dir = 'inference/output'
+            if os.path.exists(out_dir):
+                shutil.rmtree(out_dir)
+            os.makedirs(out_dir)
 
-            for line in iter(inference_process.stdout.readline, ''):
-                print(line, end='')  # Print the output line by line
-                if "Results saved" in line:
-                    inference_process.kill()  # Kill the process if "Results saved" is found
-                    break
+            imgsz = check_img_size(size, s=self.model.stride.max())
+            dataset = LoadImages(str(image), img_size=imgsz)
 
+            for path, img, im0s, _ in dataset:
+                img = torch.from_numpy(img).to(self.device)
+                img = img.half() if self.device.type != 'cpu' else img.float()
+                img /= 255.0
+                if img.ndimension() == 3:
+                    img = img.unsqueeze(0)
 
-            outputPath = str(image).replace("/tmp","", 1).replace("/", "")
+                with torch.no_grad():
+                    pred = self.model(img, augment=False)[0]
+                pred = non_max_suppression(pred, confidence, iou)
+                det = pred[0]
+                im0 = im0s.copy()
+                txt_content = []
 
-            outputImage = Path(f"inference/output/{outputPath}")
+                if len(det):
+                    det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
 
-            outputFile = outputPath.split(".")[0] + ".txt"
+                    for *xyxy, conf, cls in det:
+                        # Convert tensors to float values
+                        x1, y1, x2, y2 = [float(x.cpu().numpy()) for x in xyxy]
+                        cls_id = int(cls)
+                        conf_val = float(conf)
+                        
+                        label = f"{self.names[cls_id]} {conf_val:.2f}"
+                        txt_content.append(f"{cls_id} {conf_val:.2f} {x1:.1f} {y1:.1f} {x2:.1f} {y2:.1f}")
+                        plot_one_box(xyxy, im0, label=label, color=self.colors[cls_id])
 
-            try:
-                with open(f"inference/output/{outputFile}", "r") as f:
-                    txt = f.read()
-            except FileNotFoundError:
-                txt = ""
+                output_path = str(image).replace("/tmp", "", 1).replace("/", "")
+                img_out = f"{out_dir}/{output_path}"
+                txt_out = f"{out_dir}/{PathLib(output_path).stem}.txt"
 
-            return Output(file=outputImage,txt=txt)
-       
+                cv2.imwrite(img_out, im0)
+                if txt_content:
+                    with open(txt_out, 'w') as f:
+                        f.write('\n'.join(txt_content))
+
+                return Output(
+                    file=Path(img_out),
+                    txt='\n'.join(txt_content) if txt_content else ""
+                )
+
+        finally:
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
